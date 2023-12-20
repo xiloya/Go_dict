@@ -1,32 +1,27 @@
+// main.go
+
 package main
 
 import (
 	"dictionary/dictionary"
-	"fmt"
+	"log"
+	"net/http"
 )
 
 func main() {
 	filepath := "dictionary/dict.json"
 	d := dictionary.NewDictionary(filepath)
 
-	d.Add("francais", "french")
-	d.Add("anglais", "english")
-	d.Add("espagnol", "spanish")
-	fmt.Println(d)
-	d.Add("italien", "italian")
-	v1, _ := d.Get("anglais")
+	http.HandleFunc("/add", d.AddHandler)
+	http.HandleFunc("/get", d.GetHandler)
+	http.HandleFunc("/remove", d.RemoveHandler)
+	http.HandleFunc("/list", d.ListHandler)
 
-	fmt.Println("v1:", v1)
+	port := "8080"
+	log.Printf("Server listening on port %s...\n", port)
 
-	d.Remove("anglais")
-
-	list, err := d.List()
-	if err != nil {
-		fmt.Println("Error:", err)
-	} else {
-		fmt.Println("List:", list)
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		log.Fatal("Error starting server:", err)
 	}
-
-	
 	
 }

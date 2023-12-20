@@ -2,17 +2,18 @@ package dictionary
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
+	"net/http"
 	"os"
 )
 
-type Dictionary struct {
-	filePath string
-}
-type Data struct {
+type KeyValuePair struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
+}
+
+type Dictionary struct {
+	filePath string
 }
 
 func NewDictionary(filePath string) Dictionary {
@@ -21,94 +22,116 @@ func NewDictionary(filePath string) Dictionary {
 	}
 }
 
-func (d *Dictionary) Get(key string) (string, error) {
-	data, err := os.ReadFile(d.filePath)
-	if err != nil {
-		return "", err
+func (d *Dictionary) AddHandler(w http.ResponseWriter, r *http.Request) {
+	var entry KeyValuePair
+	if err := json.NewDecoder(r.Body).Decode(&entry); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
 	}
 
-	var jsonData map[string]string
-	if err := json.Unmarshal(data, &jsonData); err != nil {
-		return "", err
-	}
-
-	value, exists := jsonData[key]
-	if !exists {
-		return "", errors.New("key not found")
-	}
-
-	return value, nil
-}
-
-func (d *Dictionary) Remove(key string) error {
-	file, err := os.ReadFile(d.filePath)
-	if err != nil {
-		return err
-	}
-
-	var jsonData map[string]string
-	if err := json.Unmarshal(file, &jsonData); err != nil {
-		return err
-	}
-
-	// Check if the key exists
-	if _, exists := jsonData[key]; !exists {
-		return errors.New("key not found")
-	}
-
-	delete(jsonData, key)
-
-	updatedData, err := json.MarshalIndent(jsonData, "", "    ")
-	if err != nil {
-		return err
-	}
-
-	err = os.WriteFile(d.filePath, updatedData, os.ModePerm)
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("removed successfully!")
-	return nil
-}
-
-func (d Dictionary) Add(key, value string) error {
 	dataMap := make(map[string]string)
-	if existingData, err := os.ReadFile(d.filePath); err == nil && len(existingData) > 0 {
-		if err := json.Unmarshal(existingData, &dataMap); err != nil {
-			return err
-		}
-	}
-	dataMap[key] = value
+	file, _ := os.ReadFile(d.filePath)
+	_ = json.Unmarshal(file, &dataMap)
 
-	updatedData, err := json.MarshalIndent(dataMap, "", "  ")
-	if err != nil {
-		return err
-	}
+	dataMap[entry.Key] = entry.Value
 
-	err = os.WriteFile(d.filePath, updatedData, 0644)
-	if err != nil {
-		return err
-	}
+	updatedData, _ := json.MarshalIndent(dataMap, "", "  ")
+	_ = os.WriteFile(d.filePath, updatedData, 0644)
 
-	fmt.Println(" added successfully!")
-	return nil
+	w.WriteHeader(http.StatusCreated)
 }
-func (d *Dictionary) List() ([]string, error) {
-	data, err := os.ReadFile(d.filePath)
-	if err != nil {
-		return nil, err
+
+func (d *Dictionary) GetHandler(w http.ResponseWriter, r *http.Request) {
+	var key string
+
+	queryKey := r.URL.Query().Get("key")
+	if queryKey == "" {
+		var requestBody struct {
+			Key string `json:"key"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		key = requestBody.Key
+	} else {
+		key = queryKey
 	}
 
-	var jsonData map[string]string
-	if err := json.Unmarshal(data, &jsonData); err != nil {
-		return nil, err
+	if key == "" {
+		http.Error(w, "Missing 'key' parameter", http.StatusBadRequest)
+		return
 	}
+
+	dataMap := make(map[string]string)
+	file, _ := os.ReadFile(d.filePath)
+	_ = json.Unmarshal(file, &dataMap)
+
+	value, exists := dataMap[key]
+	if !exists {
+		http.Error(w, "Key not found", http.StatusNotFound)
+		return
+	}
+
+	response := KeyValuePair{Key: key, Value: value}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+func (d *Dictionary) RemoveHandler(w http.ResponseWriter, r *http.Request) {
+	var key string
+
+	queryKey := r.URL.Query().Get("key")
+	if queryKey == "" {
+		var requestBody struct {
+			Key string `json:"key"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		key = requestBody.Key
+	} else {
+		key = queryKey
+	}
+
+	if key == "" {
+		http.Error(w, "Missing 'key' parameter", http.StatusBadRequest)
+		return
+	}
+
+	dataMap := make(map[string]string)
+	file, _ := os.ReadFile(d.filePath)
+	_ = json.Unmarshal(file, &dataMap)
+
+	if _, exists := dataMap[key]; !exists {
+		http.Error(w, "Key not found", http.StatusNotFound)
+		return
+	}
+
+	delete(dataMap, key)
+
+	updatedData, _ := json.MarshalIndent(dataMap, "", "    ")
+	_ = os.WriteFile(d.filePath, updatedData, os.ModePerm)
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (d *Dictionary) ListHandler(w http.ResponseWriter, r *http.Request) {
+	dataMap := make(map[string]string)
+	file, _ := os.ReadFile(d.filePath)
+	_ = json.Unmarshal(file, &dataMap)
 
 	var result []string
-	for key, value := range jsonData {
+	for key, value := range dataMap {
 		result = append(result, fmt.Sprintf("%s: %s", key, value))
 	}
 
-	return result, nil
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
 }
