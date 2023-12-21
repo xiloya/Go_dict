@@ -2,7 +2,6 @@ package dictionary
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 )
@@ -16,6 +15,9 @@ type Dictionary struct {
 	filePath string
 }
 
+var AddChannel = make(chan KeyValuePair)
+var RemoveChannel = make(chan string)
+
 func NewDictionary(filePath string) Dictionary {
 	return Dictionary{
 		filePath: filePath,
@@ -28,15 +30,7 @@ func (d *Dictionary) AddHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
-
-	dataMap := make(map[string]string)
-	file, _ := os.ReadFile(d.filePath)
-	_ = json.Unmarshal(file, &dataMap)
-
-	dataMap[entry.Key] = entry.Value
-
-	updatedData, _ := json.MarshalIndent(dataMap, "", "  ")
-	_ = os.WriteFile(d.filePath, updatedData, 0644)
+	AddChannel <- entry
 
 	w.WriteHeader(http.StatusCreated)
 }
@@ -105,19 +99,7 @@ func (d *Dictionary) RemoveHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dataMap := make(map[string]string)
-	file, _ := os.ReadFile(d.filePath)
-	_ = json.Unmarshal(file, &dataMap)
-
-	if _, exists := dataMap[key]; !exists {
-		http.Error(w, "Key not found", http.StatusNotFound)
-		return
-	}
-
-	delete(dataMap, key)
-
-	updatedData, _ := json.MarshalIndent(dataMap, "", "    ")
-	_ = os.WriteFile(d.filePath, updatedData, os.ModePerm)
+	RemoveChannel <- key
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -129,7 +111,7 @@ func (d *Dictionary) ListHandler(w http.ResponseWriter, r *http.Request) {
 
 	var result []string
 	for key, value := range dataMap {
-		result = append(result, fmt.Sprintf("%s: %s", key, value))
+		result = append(result, key+": "+value)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
